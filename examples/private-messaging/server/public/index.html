@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Simple Input Page</title>
+    <script>
+      // Function to handle form submission using AJAX
+      function handleSubmit(event) {
+        event.preventDefault(); // Prevent default form submission
+
+        // Get the input value
+        const inputText = document.querySelector(
+          'input[name="inputText"]'
+        ).value;
+
+        // Create a POST request to the API
+        fetch('http://192.168.1.104:3000/api/validate', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ username: inputText }),
+        })
+          .then((response) => response.json()) // Parse JSON response
+          .then((data) => {
+            // Display the response in the output section
+            if (data.success) {
+              const outputSection = document.getElementById('output');
+              outputSection.innerHTML = `Response: <b><font color="#06D001"> &nbsp;${data.message}</font></b>`;
+            } else {
+              const outputSection = document.getElementById('output');
+              outputSection.innerHTML = `Response: <b><font color="#FF2929"> &nbsp;${data.message}</font></b>`;
+            }
+          })
+          .catch((error) => {
+            console.error('Error:', error);
+            const outputSection = document.getElementById('output');
+            outputSection.innerHTML = `Error: ${error.message}`;
+          });
+      }
+    </script>
+  </head>
+  <body
+    style="
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+      width: 100vw;
+      height: 100vh;
+    "
+  >
+    <div
+      style="
+        /* background-color: red; */
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        height: 100%;
+        width: 100%;
+      "
+    >
+      <h1 style="font-size: 44px">Trigger Update Content TV</h1>
+      <form id="inputForm" onsubmit="handleSubmit(event)">
+        <input
+          style="
+            font-size: 24px;
+            padding: 10px 20px;
+            height: 50px;
+            width: 300px;
+            border: 2px solid #000;
+            border-radius: 5px;
+          "
+          type="text"
+          name="inputText"
+          placeholder="Masukkan Kode TV"
+          required
+        />
+        <button
+          style="font-size: 24px; height: 70px; width: 100px"
+          type="submit"
+        >
+          Submit
+        </button>
+      </form>
+
+      <!-- Output section to display the response -->
+      <div
+        style="
+          display: flex;
+          justify-content: center;
+          align-items: center;
+          font-size: 24px;
+          margin-top: 10px;
+          width: 500px;
+          height: 50px;
+          border: 2px solid #000;
+          border-radius: 5px;
+        "
+        id="output"
+      >
+        Response:
+      </div>
+    </div>
+  </body>
+</html>

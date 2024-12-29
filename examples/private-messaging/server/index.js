@@ -1,17 +1,59 @@
-const httpServer = require("http").createServer();
-const io = require("socket.io")(httpServer, {
+const express = require('express');
+const fs = require('fs');
+const path = require('path');
+const bodyParser = require('body-parser');
+const cors = require('cors');
+const connectDB = require('./db');
+const User = require('./models/UserData');
+
+const app = express();
+
+const corsOptions = {
+  origin: 'http://192.168.1.104:4000', // Allow requests from your frontend port
+  methods: ['GET', 'POST'], // Allowed HTTP methods
+  allowedHeaders: ['Content-Type'], // Allowed headers
+  credentials: true, // Allow cookies (if needed)
+};
+app.use(cors(corsOptions));
+app.use(bodyParser.json());
+const httpServer = require('http').createServer((req, res) => {
+  if (req.method === 'GET' && req.url === '/') {
+    const filePath = path.join(__dirname, 'public', 'index.html');
+    fs.readFile(filePath, (err, data) => {
+      if (err) {
+        res.writeHead(500, { 'Content-Type': 'text/plain' });
+        res.end('Internal Server Error');
+      } else {
+        res.writeHead(200, { 'Content-Type': 'text/html' });
+        res.end(data);
+      }
+    });
+  } else {
+    // Handle 404
+    res.writeHead(404, { 'Content-Type': 'text/plain' });
+    res.end('Page Not Found');
+  }
+});
+
+// Connect to MongoDB
+connectDB();
+
+// Routes
+app.use('/api', require('./routes'));
+
+const io = require('socket.io')(httpServer, {
   cors: {
-    origin: "http://192.168.1.110:8080",
+    origin: 'http://192.168.1.104:8080',
   },
 });
 
-const crypto = require("crypto");
-const randomId = () => crypto.randomBytes(8).toString("hex");
+const crypto = require('crypto');
+const randomId = () => crypto.randomBytes(8).toString('hex');
 
-const { InMemorySessionStore } = require("./sessionStore");
+const { InMemorySessionStore } = require('./sessionStore');
 const sessionStore = new InMemorySessionStore();
 
-const { InMemoryMessageStore } = require("./messageStore");
+const { InMemoryMessageStore } = require('./messageStore');
 const messageStore = new InMemoryMessageStore();
 
 io.use((socket, next) => {
@@ -28,7 +70,7 @@ io.use((socket, next) => {
   }
   const username = socket.handshake.auth.username;
   if (!username) {
-    return next(new Error("invalid username"));
+    return next(new Error('invalid username'));
   }
   socket.sessionID = randomId();
   socket.userID = randomId();
@@ -36,8 +78,11 @@ io.use((socket, next) => {
   next();
 });
 
-io.on("connection", (socket) => {
-  console.log(socket.userID);
+io.on('connection', (socket) => {
+  console.log(
+    '\x1b[32m%s\x1b[0m',
+    'connected user: ' + socket.username + ', session: ' + socket.sessionID
+  );
   // persist session
   sessionStore.saveSession(socket.sessionID, {
     userID: socket.userID,
@@ -46,9 +91,10 @@ io.on("connection", (socket) => {
   });
 
   // emit session details
-  socket.emit("session", {
+  socket.emit('session', {
     sessionID: socket.sessionID,
     userID: socket.userID,
+    username: socket.username, //TODO TAMBAHAN
   });
 
   // join the "userID" room
@@ -74,76 +120,32 @@ io.on("connection", (socket) => {
       messages: messagesPerUser.get(session.userID) || [],
     });
   });
-  socket.emit("users", users);
+  checkActiveUsers(users);
+  socket.emit('users', users);
 
   // notify existing users
-  socket.broadcast.emit("user connected", {
+  socket.broadcast.emit('user connected', {
     userID: socket.userID,
     username: socket.username,
     connected: true,
     messages: [],
   });
 
-  // forward the private message to the right recipient (and to other tabs of the sender)
-  socket.on("private message", ({ from, content, to }) => {
-    const message = {
-      content,
-      // from: socket.userID,
-      from,
-      to,
-    };
-    if (message.to == "socketserver") {
-      console.log("from: " + message.from + "\n" + "to: " + message.to + "\n" + "content: " + message.content + "\n")
-    }
-    // socket.to(to).to(socket.userID).emit("private message", message);
-    // messageStore.saveMessage(message);
-  });
-
-  socket.on("update download", ({duid, zipname, wktdownload, to}) => {
-    const message = {
-      duid,
-      zipname,
-      wktdownload,
-      to,
-    }
-    if (message.duid != "" && message.to != "" && message.zipname != "" && message.wktdownload != "") {
-      const responseMsg = {
-        statusMsg: "success",
-        code: 200
-      }
-      if (message.to == "socketserver"){
-        console.log("duid: " + message.duid + "\n" + "zipname: " + message.zipname + "\n" + "wktdownload: " + message.wktdownload + "\n")
-        socket.emit("response", responseMsg)
-      }
-    }
-  })
-
-  socket.on("update content", ({message, to, from}) => {
-    const requestContent = {
-      message,
-      to,
-      from
-    }
-    const contentAMG = {
-      sesiJadwal: "G4T6G34G4W",
-      namaKonten: "s20240502154241.mp4",
-      sizeKonten: "3137581",
-      urutanKonten: 3
-    }
-    if (to == "socketserver") {
-      console.log("message: " + requestContent.message + "\n" + "to: " + requestContent.to + "\n" + "from: " + requestContent.from + "\n")
-      socket.emit("update content", contentAMG)
-    }
-  })
-
   // notify users upon disconnection
-  socket.on("disconnect", async () => {
+  socket.on('disconnect', async () => {
     const matchingSockets = await io.in(socket.userID).allSockets();
     const isDisconnected = matchingSockets.size === 0;
     if (isDisconnected) {
       // notify other users
-      socket.broadcast.emit("user disconnected", socket.userID);
+      socket.broadcast.emit('user disconnected', socket.userID);
       // update the connection status of the session
+      console.log(
+        '\x1b[31m%s\x1b[0m',
+        'disconnected user: ' +
+          socket.username +
+          ', session: ' +
+          socket.sessionID
+      );
       sessionStore.saveSession(socket.sessionID, {
         userID: socket.userID,
         username: socket.username,
@@ -158,13 +160,28 @@ io.on("connection", (socket) => {
           messages: messagesPerUser.get(session.userID) || [],
         });
       });
-      socket.broadcast.emit("users", users);
+      checkActiveUsers(users);
+      socket.broadcast.emit('users', users);
     }
   });
 });
 
-const PORT = process.env.PORT || 3000;
+function checkActiveUsers(Users) {
+  Users.forEach((user) => {
+    if (user.connected) {
+      console.log(new Date() + ` ${user.username} active`);
+    } else {
+      console.log(new Date() + ` ${user.username} inactive`);
+    }
+  });
+}
 
-httpServer.listen(PORT, () =>
-  console.log(`server listening at http://192.168.1.110:${PORT}`)
+const SOCKET_PORT = process.env.PORT || 3000;
+const PAGE_PORT = process.env.PORT || 4000;
+
+app.listen(SOCKET_PORT, () =>
+  console.log(`Server running on http://192.168.1.104:${SOCKET_PORT}`)
 );
+httpServer.listen(PAGE_PORT, () => {
+  console.log(`Socket Server running on http://192.168.1.104:${PAGE_PORT}`);
+});
